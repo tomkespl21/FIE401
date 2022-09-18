@@ -22,7 +22,7 @@ summary(CAR_MA)
 
 CAR_MA <- 
   CAR_MA %>% 
-  mutate(yyyymmdd = ymd(yyyymmdd,))
+  mutate(yyyymmdd = ymd(yyyymmdd))
 
 # does not really make sense to check for outliers in dummy variables 
 # therefore checking the other variables by plots 
@@ -100,9 +100,8 @@ plot8 <-
 
 grid.arrange(plot7,plot8,ncol=2)
 
-# not sure if we have to winsorize 
 # 3 highest values seem to outlie a bit 
-
+# otherwise seems fine, not sure
 
 
 # run-up-bidder
@@ -121,7 +120,7 @@ plot10 <-
 
 grid.arrange(plot9,plot10,ncol=2)
 
-# seems fine
+# seems fine, already bounded
 
 
 #relsize
@@ -140,7 +139,7 @@ plot12 <-
 
 grid.arrange(plot11,plot12,ncol=2)
 
-# seems fine
+# seems fine, maybe scale
 
 plot13 <- 
   CAR_MA %>% 
@@ -158,6 +157,7 @@ plot14 <-
 grid.arrange(plot13,plot14,ncol=2)
 
 # maybe one outliers ? 
+# should winsorize and scale
 # why all high bidder_mtb in year 2000 ? 
 
 
@@ -178,7 +178,7 @@ plot16 <-
 grid.arrange(plot15,plot16,ncol=2)
 
 # seems fine 
-
+# already bounded
 
 
 
@@ -199,7 +199,7 @@ plot18 <-
 grid.arrange(plot17,plot18,ncol=2)
 
 # seems fine 
-
+# already bounded
 
 
 # adjust data 
@@ -207,10 +207,12 @@ CAR_MA <-
   CAR_MA %>% 
   mutate(deal_value = scale(deal_value),
          bidder_size = scale(bidder_size),
-         bidder_mtb = scale(bidder_mtb)) %>% 
+         bidder_mtb = scale(bidder_mtb),
+         relsize = scale(relsize)) %>% 
   mutate(deal_value = Winsorize(deal_value, probs=c(0.01,0.99)),
          bidder_size = Winsorize(bidder_size, probs=c(0.01,0.99)),
          bidder_mtb = Winsorize(bidder_mtb, probs=c(0.01,0.99))) 
+
 
 # descriptive table 1 
 summary1 <- 
@@ -219,16 +221,129 @@ summary1 <-
   group_by(yyyy) %>%
   mutate(share_private = sum(private)/n(),
          share_stock = sum(all_stock)/n()) %>% 
-  summarise(avg_ds = mean(deal_value),
-            avg_bidCAR = mean(bidder_size),
-            avg_share_priv = mean(share_private),
-            avg_share_stock = mean(share_stock))
+  summarise(avg_ds = round(mean(deal_value), digits=3),
+            avg_bidCAR = round(mean(bidder_size), digits=3),
+            avg_share_priv = round(mean(share_private), digits=3),
+            avg_share_stock = round(mean(share_stock), digits = 3))
 
 stargazer(summary1,summary = FALSE, type="text")
 
 
 
 # descriptive table 2 
+vars.for.model <- names(CAR_MA[!names(CAR_MA) %in% c('yyyymmdd','yyyy', 
+                                                     'private', 'all_stock')])
+
+difference.means <- data.frame(matrix(NA,    # Create empty data frame
+                                      nrow = 4,
+                                      ncol = length(vars.for.model)))
+
+row.names(difference.means) <- c('all.stock', 'not.all.stock', 'differece', 
+                                 't-test')
+names(difference.means) <- vars.for.model
+
+difference.means[1,] <- lapply(CAR_MA[CAR_MA$all_stock == 1,
+                                      names(CAR_MA) %in% vars.for.model], mean)
+
+difference.means[2,] <- lapply(CAR_MA[CAR_MA$all_stock == 0,
+                                      names(CAR_MA) %in% vars.for.model], mean)
+
+difference.means[3,] <- difference.means[1,] - difference.means[2,]
+
+for (v in vars.for.model){
+  pval <- t.test(CAR_MA[CAR_MA$all_stock == 1,v],
+                 CAR_MA[CAR_MA$all_stock == 0,v])$p.value
+  difference.means[4,v] <- pval
+}
+
+
+
+# run regressions 
+
+# regression with private + public without controls
+reg1 <- 
+  lm(carbidder~all_stock, data = CAR_MA)
+summary(reg1)
+
+# regression with public without controls
+reg2 <- 
+  lm(carbidder~all_stock, data = CAR_MA[CAR_MA$public==1,])
+summary(reg2)
+
+# regression with private without controls
+reg3 <- 
+  lm(carbidder~all_stock+private, data = CAR_MA[CAR_MA$public==0],)
+summary(reg3)
+
+# regression with private + public and controls
+reg4 <-
+  lm(carbidder~all_stock+
+       deal_value+
+       bidder_size+
+       bidder_mtb+
+       run_up_bidder+
+       bidder_fcf+
+       bidder_lev+
+       sigma_bidder+
+       relsize+
+       horz+
+       tender_offer+
+       hostile+
+       I(all_stock*public),
+       data = CAR_MA)
+summary(reg4)
+
+# regression with public and controls  
+reg5 <-
+  lm(carbidder~all_stock+
+       deal_value+
+       bidder_size+
+       bidder_mtb+
+       run_up_bidder+
+       bidder_fcf+
+       bidder_lev+
+       sigma_bidder+
+       relsize+
+       horz+
+       tender_offer+
+       hostile,
+     data = CAR_MA[CAR_MA$public ==1,])
+summary(reg5)
+
+
+# regression with private and controls 
+reg6 <-
+  lm(carbidder~all_stock+
+       deal_value+
+       bidder_size+
+       bidder_mtb+
+       run_up_bidder+
+       bidder_fcf+
+       bidder_lev+
+       sigma_bidder+
+       relsize+
+       horz+
+       tender_offer+
+       hostile,
+     data = CAR_MA[CAR_MA$public ==0,])
+summary(reg6)
+
+
+
+
+stargazer(reg1, reg2, reg3, reg4, reg5, reg6,
+          keep.stat = c('n','adj.rsq'),
+          type = 'latex', header = FALSE, digits = 3,
+          notes.append = TRUE, notes.align = 'l', font.size = 'small',
+          notes = 'Notes with explanations?')
+
+
+
+
+
+
+
+
 
 
 
