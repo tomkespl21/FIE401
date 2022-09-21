@@ -2,77 +2,81 @@
 
 rm(list=ls())
 
-# libraries
+# load data
+load('CAR_M&A.RData')
+
+# Libraries
+library(ggplot2)
+library(RColorBrewer)
 library(tidyverse)
-library(lubridate) # for ymd function
-library(gridExtra) # for graphs
-library(DescTools) # for winsorize() function 
-library(stargazer) # nice tables
+library(stargazer)
+library(corrplot)
+library(gridExtra) # for combining graphs
+library(lubridate) # for ymd function 
 
 
+# Functions, colors and themes
+mytheme <- 
+  theme_minimal() +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank())
 
-# load in data 
-load("CAR_M&A.RData")
+# STEP 1 -----------------------------------------------------------------------
+#       (Summary statistics & Exploratory analysis)
 
-# first look at variables
+# summary 
 summary(CAR_MA)
 # already can see quite different means compared to medians 
-# this gives a first indication of outliers
+# also if max values are far away from 3. quantile
+# this is extremely the case for deal_value and bidder size
+
+# Select the variables that we need *****************************************************************
 
 
-CAR_MA <- 
-  CAR_MA %>% 
-  mutate(yyyymmdd = ymd(yyyymmdd))
+# Variables public and private contain the same information
+# change to date variable
+CAR_MA$yyyymmdd <- ymd(CAR_MA$yyyymmdd)
 
-# does not really make sense to check for outliers in dummy variables 
-# therefore checking the other variables by plots 
+# Binary variables are stored as numerical
+binary.vars <- c('public', 'private', 'tender_offer', 'all_stock', 'hostile',
+                 'horz')
 
+stargazer(CAR_MA[!names(CAR_MA) %in% c('yyyymmdd','yyyy',binary.vars)], 
+          type = 'latex', header = FALSE, 
+          summary.stat = c('min','p25','mean','p75', 'max','sd'))
+
+# Are there outliers? Evaluate if you should winsorize the data:
 # Deal_value:
 plot1 <- 
   CAR_MA %>% 
-  ggplot(aes(x=yyyymmdd,y=deal_value))+
-  geom_point()
+  ggplot(aes(x=yyyy,y=deal_value))+
+  geom_point()+
+  geom_point(data = CAR_MA[2558,],color="red")
+
+ggplot(CAR_MA, aes(deal_value)) +
+  geom_histogram(bins = 30, fill = brewer.pal(11,'PiYG')[2]) +
+  mytheme # MA
 
 plot2 <- 
   CAR_MA %>%   
-  ggplot(aes(x=factor(0),deal_value))+
-  geom_boxplot()+
-  theme(axis.title.x=element_blank(),
-        axis.text.x=element_blank(),
-        axis.ticks.x=element_blank())
+  ggplot(aes(deal_value))+
+  geom_histogram(bins = 30,
+                 fill = brewer.pal(11,'PiYG')[2]) +
+  mytheme # M
 
 grid.arrange(plot1, plot2, ncol=2)
-# observation in row 2558 seems to be an outlier with double the amount of value compared to second highest 
-# this in absolute values will probably effect the coefficients 
-# therefore winsorizing and scaling could make sense 
-  
+# just by looking at the scatterplot we indicate a huge outlier 
+# This could be an error but nonetheless should be removed from the dataset   
+# overall there seem to be other "smaller" outliers and we therefore have to winsorize or use log-transformation 
+# because of the shape of the historgram we decided to use log-transformations # MAKE GRADIENT ****************************************************************************************
 
-# carbidder: 
-plot3 <- 
+# bidder_size
+ggplot3 <- 
   CAR_MA %>% 
-  ggplot(aes(x=yyyymmdd, y=carbidder))+
+  ggplot(aes(x=yyyy, y=bidder_size))+
   geom_point()
 
 plot4 <- 
-  CAR_MA %>%   
-  ggplot(aes(x=factor(0),carbidder))+
-  geom_boxplot()+
-  theme(axis.title.x=element_blank(),
-        axis.text.x=element_blank(),
-        axis.ticks.x=element_blank())
-
-grid.arrange(plot3,plot4,ncol=2)
-
-# does not seem too bad of outliers and scaling, 
-# therefore no winsorising or sclaing
-
-# bidder size
-plot5 <- 
-  CAR_MA %>% 
-  ggplot(aes(x=yyyymmdd, y=bidder_size))+
-  geom_point()
-
-plot6 <- 
   CAR_MA %>%   
   ggplot(aes(x=factor(0),bidder_size))+
   geom_boxplot()+
@@ -80,73 +84,15 @@ plot6 <-
         axis.text.x=element_blank(),
         axis.ticks.x=element_blank())
 
-grid.arrange(plot5,plot6,ncol=2)
+grid.arrange(plot3,plot4,ncol=2)
 
-# winsorizing and scaling makes sense
-
-# sigma bidder
-plot7 <- 
+plot5 <- 
   CAR_MA %>% 
-  ggplot(aes(x=yyyymmdd, y=sigma_bidder))+
+  ggplot(aes(x=yyyy, y=bidder_mtb))+
   geom_point()
 
-plot8 <- 
-  CAR_MA %>%   
-  ggplot(aes(x=factor(0),sigma_bidder))+
-  geom_boxplot()+
-  theme(axis.title.x=element_blank(),
-        axis.text.x=element_blank(),
-        axis.ticks.x=element_blank())
-
-grid.arrange(plot7,plot8,ncol=2)
-
-# 3 highest values seem to outlie a bit 
-# otherwise seems fine, not sure
-
-
-# run-up-bidder
-plot9 <- 
-  CAR_MA %>% 
-  ggplot(aes(x=yyyymmdd, y=run_up_bidder))+
-  geom_point()
-
-plot10 <- 
-  CAR_MA %>%   
-  ggplot(aes(x=factor(0),run_up_bidder))+
-  geom_boxplot()+
-  theme(axis.title.x=element_blank(),
-        axis.text.x=element_blank(),
-        axis.ticks.x=element_blank())
-
-grid.arrange(plot9,plot10,ncol=2)
-
-# seems fine, already bounded
-
-
-#relsize
-plot11 <- 
-  CAR_MA %>% 
-  ggplot(aes(x=yyyymmdd, y=relsize))+
-  geom_point()
-
-plot12 <- 
-  CAR_MA %>%   
-  ggplot(aes(x=factor(0),relsize))+
-  geom_boxplot()+
-  theme(axis.title.x=element_blank(),
-        axis.text.x=element_blank(),
-        axis.ticks.x=element_blank())
-
-grid.arrange(plot11,plot12,ncol=2)
-
-# seems fine, maybe scale
-
-plot13 <- 
-  CAR_MA %>% 
-  ggplot(aes(x=yyyymmdd, y=bidder_mtb))+
-  geom_point()
-
-plot14 <- 
+# bidder book to market 
+plot6 <- 
   CAR_MA %>%   
   ggplot(aes(x=factor(0),bidder_mtb))+
   geom_boxplot()+
@@ -155,82 +101,60 @@ plot14 <-
         axis.ticks.x=element_blank())
 
 grid.arrange(plot13,plot14,ncol=2)
-
-# maybe one outliers ? 
-# should winsorize and scale
-# why all high bidder_mtb in year 2000 ? 
-
-
-
-plot15 <- 
-  CAR_MA %>% 
-  ggplot(aes(x=yyyymmdd, y=bidder_fcf))+
-  geom_point()
-
-plot16 <- 
-  CAR_MA %>%   
-  ggplot(aes(x=factor(0),bidder_fcf))+
-  geom_boxplot()+
-  theme(axis.title.x=element_blank(),
-        axis.text.x=element_blank(),
-        axis.ticks.x=element_blank())
-
-grid.arrange(plot15,plot16,ncol=2)
-
-# seems fine 
-# already bounded
-
-
-
-
-plot17 <- 
-  CAR_MA %>% 
-  ggplot(aes(x=yyyymmdd, y=bidder_lev))+
-  geom_point()
-
-plot18 <- 
-  CAR_MA %>%   
-  ggplot(aes(x=factor(0),bidder_lev))+
-  geom_boxplot()+
-  theme(axis.title.x=element_blank(),
-        axis.text.x=element_blank(),
-        axis.ticks.x=element_blank())
-
-grid.arrange(plot17,plot18,ncol=2)
-
-# seems fine 
-# already bounded
+# seems suspicious to be an error 
+# but we believe the reason for high values only in year 2000 
+# is the dotcom bubble 
 
 
 # adjust data 
+# adjust data 
 CAR_MA <- 
+  CAR_MA %>%
+  rename(year = yyyy) %>% 
+  slice(-(2558)) %>%                    # to get rid of extreme outlier
+  mutate(deal_value = log(deal_value),
+         bidder_size = log(bidder_size)) 
+
+# as we see now, log-tranformation solved the outlier problem 
+plot1 <- 
   CAR_MA %>% 
-  mutate(deal_value = scale(deal_value),
-         bidder_size = scale(bidder_size),
-         bidder_mtb = scale(bidder_mtb),
-         relsize = scale(relsize)) %>% 
-  mutate(deal_value = Winsorize(deal_value, probs=c(0.01,0.99)),
-         bidder_size = Winsorize(bidder_size, probs=c(0.01,0.99)),
-         bidder_mtb = Winsorize(bidder_mtb, probs=c(0.01,0.99))) 
+  ggplot(aes(x=year,y=deal_value))+
+  geom_point()
 
 
-# descriptive table 1 
+plot2 <- 
+  CAR_MA %>%   
+  ggplot(aes(deal_value))+
+  geom_histogram(bins = 30,
+                 fill = brewer.pal(11,'PiYG')[2]) +
+  mytheme # M
+
+grid.arrange(plot1, plot2, ncol=2)
+
+
+
+# STEP 2 -----------------------------------------------------------------------
+#       (Average values by year)
+
+# descriptive table 1:
 summary1 <- 
   CAR_MA %>% 
   arrange(yyyymmdd) %>% 
-  group_by(yyyy) %>%
-  mutate(share_private = sum(private)/n(),
-         share_stock = sum(all_stock)/n()) %>% 
-  summarise(avg_ds = round(mean(deal_value), digits=3),
-            avg_bidCAR = round(mean(bidder_size), digits=3),
-            avg_share_priv = round(mean(share_private), digits=3),
+  group_by(year) %>%
+  mutate(share_private = mean(private),
+         share_stock = mean(all_stock)) %>% 
+  summarise(avg_deal_size = round(mean(deal_value), digits= 3),
+            avg_bidCAR = round(mean(carbidder), digits=3),
+            avg_share_private = round(mean(share_private), digits=3),
             avg_share_stock = round(mean(share_stock), digits = 3))
 
-stargazer(summary1,summary = FALSE, type="text")
+stargazer(summary1,summary = FALSE, type="latex")
 
 
 
-# descriptive table 2 
+# STEP 3 -----------------------------------------------------------------------
+#       (Average values by method of payment & t-tests)
+
 vars.for.model <- names(CAR_MA[!names(CAR_MA) %in% c('yyyymmdd','yyyy', 
                                                      'private', 'all_stock')])
 
@@ -256,89 +180,103 @@ for (v in vars.for.model){
   difference.means[4,v] <- pval
 }
 
+# STEP 4 -----------------------------------------------------------------------
+#       (Regression table)
 
+# Check correlations for potential multicolliniarity
+correlations <- cor(CAR_MA[!names(CAR_MA) %in% 'yyyymmdd'])
+corrplot(correlations, col = COL2('PiYG'), tl.col = 'black')
 
 # run regressions 
 
-# regression with private + public without controls
-reg1 <- 
-  lm(carbidder~all_stock, data = CAR_MA)
-summary(reg1)
+# Only public - no controls
+model1 <- 
+  lm(carbidder ~ all_stock, CAR_MA[CAR_MA$public == 0,]) 
+summary(model1)
 
-# regression with public without controls
-reg2 <- 
-  lm(carbidder~all_stock, data = CAR_MA[CAR_MA$public==1,])
-summary(reg2)
+# Only private - no controls
+model2 <- 
+  lm(carbidder ~ all_stock,
+     CAR_MA[CAR_MA$public == 1,]) 
+summary(model2)
 
-# regression with private without controls
-reg3 <- 
-  lm(carbidder~all_stock+private, data = CAR_MA[CAR_MA$public==0],)
-summary(reg3)
 
-# regression with private + public and controls
-reg4 <-
-  lm(carbidder~all_stock+
-       deal_value+
-       bidder_size+
-       bidder_mtb+
-       run_up_bidder+
-       bidder_fcf+
-       bidder_lev+
-       sigma_bidder+
-       relsize+
-       horz+
-       tender_offer+
-       hostile+
-       I(all_stock*public),
-       data = CAR_MA)
-summary(reg4)
 
-# regression with public and controls  
-reg5 <-
-  lm(carbidder~all_stock+
-       deal_value+
-       bidder_size+
-       bidder_mtb+
-       run_up_bidder+
-       bidder_fcf+
-       bidder_lev+
-       sigma_bidder+
-       relsize+
-       horz+
-       tender_offer+
+# Full sample - no controls
+model3 <- 
+  lm(carbidder ~ all_stock +
+                 public +
+                 I(all_stock*public),
+                 CAR_MA) 
+summary(model3)
+
+
+# Only public - controls
+model4 <- 
+  lm(carbidder ~ all_stock +
+       deal_value +
+       bidder_size +
+       bidder_mtb + 
+       run_up_bidder +
+       bidder_fcf +
+       bidder_lev +
+       sigma_bidder + 
+       relsize +
+       horz +
+       tender_offer +
+       year+
        hostile,
-     data = CAR_MA[CAR_MA$public ==1,])
-summary(reg5)
+     CAR_MA[CAR_MA$public == 0,])
+summary(model4)
 
 
-# regression with private and controls 
-reg6 <-
-  lm(carbidder~all_stock+
-       deal_value+
-       bidder_size+
-       bidder_mtb+
-       run_up_bidder+
-       bidder_fcf+
-       bidder_lev+
-       sigma_bidder+
-       relsize+
-       horz+
-       tender_offer+
+# Only private - controls
+model5 <- 
+  lm(carbidder ~ all_stock +
+       deal_value +
+       bidder_size +
+       bidder_mtb + 
+       run_up_bidder +
+       bidder_fcf +
+       bidder_lev +
+       sigma_bidder + 
+       relsize +
+       horz +
+       tender_offer +
+       year+
        hostile,
-     data = CAR_MA[CAR_MA$public ==0,])
-summary(reg6)
+     CAR_MA[CAR_MA$public == 1,])
+summary(model5)
+
+
+# Full sample - controls
+model6 <-
+  lm(carbidder ~ all_stock +
+                 public +
+                 I(all_stock*public) +
+                 deal_value +
+                 bidder_size +
+                 bidder_mtb +
+                 run_up_bidder + 
+                 bidder_fcf +
+                 bidder_lev +
+                 sigma_bidder +
+                 relsize +
+                 horz + 
+                 tender_offer +
+                 year+
+                 hostile,
+                 CAR_MA)
+summary(model6)
 
 
 
 
-stargazer(reg1, reg2, reg3, reg4, reg5, reg6,
+stargazer(model1, model2, model3, model4, model5, model6,
           keep.stat = c('n','adj.rsq'),
           type = 'latex', header = FALSE, digits = 3,
           notes.append = TRUE, notes.align = 'l', font.size = 'small',
-          notes = 'Notes with explanations?')
-
-
-
+          notes = 'Notes with explanations?'
 
 
 
