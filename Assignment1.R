@@ -1,8 +1,6 @@
-# Finacial Econometrics Assignment 1 
+# SETUP ------------------------------------------------------------------------
+# I set up the working directory manually 
 
-rm(list=ls())
-
-# load data
 load('CAR_M&A.RData')
 
 # Libraries
@@ -276,12 +274,7 @@ stargazer(model1, model2, model3, model4, model5, model6,
           keep.stat = c('n','adj.rsq'),
           type = 'latex', header = FALSE, digits = 3,
           notes.append = TRUE, notes.align = 'l', font.size = 'small',
-          notes = 'Notes with explanations?'
-
-
-
-
-
+          notes = 'Notes with explanations?')
 
 
 
