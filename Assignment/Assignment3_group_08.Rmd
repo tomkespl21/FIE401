@@ -1,0 +1,187 @@
+---
+title: "| FIE401 - Third assignment \n| Does financial literacy cause participation
+  in the stock market?\n|\n"
+author: "Group 08"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+
+# Abstract
+
+In this assignment we inspect a paper by van Rooij et.al. and try to answer the question whether financial literacy has an effect on stock market participation.
+Findings indicate that parental financial knowledge as well as the economic situation of siblings are relevant instruments.These are then used to find the casual effect by applying instrumental variable regression because of expected endogeneity problems. We find that financial literacy indeed has a positive effect on stock market participation, which is inline with the findings of the inspected paper. 
+
+\newpage
+
+```{r data-and-libraries, results='asis', message = FALSE}
+# SETUP ------------------------------------------------------------------------
+
+## Libraries -------------------------------------------------------------------
+library(tidyverse)
+library(AER)
+library(lmtest)
+library(sandwich)
+library(car)
+library(stargazer)
+library(readr)
+
+
+## Data ------------------------------------------------------------------------
+
+data <- read.csv("Finlit_new.csv", stringsAsFactors = TRUE)
+
+# Extract code from Rmd
+# knitr::purl(input = 'Assignment3_group_08.Rmd',
+#             output = 'Assignment3_group_08.R')
+```
+
+```{r data-preparation}
+
+data %>%
+  rename(sibling_fin_sit = f10,
+         parent_fin_knowledge = f15,
+         self_assessed_literacy = b1,
+         economics_education = b2,
+         daily_use_economics = b3) -> data
+
+```
+
+
+# Task 1
+
+```{r summary, results='asis'}
+# summary statistics 
+
+
+
+# Summary statistics
+stargazer(data, 
+          type = 'latex', header = FALSE, 
+          title = 'Summary statistics',
+          summary = TRUE,
+          summary.stat = c('min','p25','mean','p75', 'max','sd'))
+
+options(knitr.kable.NA = '')
+
+summary(data[,c(1:4)]) %>%
+  knitr::kable()
+
+summary(data[,c(5,6,8,12)]) %>%
+  knitr::kable()
+
+```
+
+# Task 2
+
+```{r estimated-models, results='asis'}
+
+# Model 1: Naive OlS regression ------------------------------------------------
+# Naive OLS regression, Controls: group 1
+ols_fit <- lm(dstocks_mut ~ indexlit1_new1 + age + numkids +
+                tot_non_equity_wealth_cat + lincome + male + partner +
+                edu2 + edu3 + edu4 + edu5 + edu6 + indexlit2_new1 +
+                retired + dum_selfempl,
+              data = data) 
+
+# create robust standard errors
+cluster_se_ols <- coeftest(ols_fit, vcov = vcovHC(ols_fit))[,2]
+
+
+# Model 2: First stage of IV regession -----------------------------------------
+# Including the two instrumental variables: "f10: siblings financial situation"
+# and "f15: parents financial situation"
+stage1 <- lm(indexlit1_new1 ~ sibling_fin_sit + parent_fin_knowledge 
+             + age + numkids + tot_non_equity_wealth_cat 
+             + lincome + male + partner + edu2 + edu3 + edu4 
+             + edu5 + edu6 + indexlit2_new1 +
+               retired + dum_selfempl,
+             data=data) 
+# create robust standard errors
+cluster_se_stage1 <- coeftest(stage1, vcov = vcovHC(stage1))[,2]
+
+
+
+# Model 3: IV regression in one go with one instruments ------------------------
+iv_fit <- ivreg(dstocks_mut ~ indexlit1_new1 + age + numkids + 
+                  tot_non_equity_wealth_cat + lincome + male + partner +
+                  edu2 + edu3 + edu4 + edu5 + edu6 + indexlit2_new1 +
+                  retired + dum_selfempl | sibling_fin_sit +
+                  parent_fin_knowledge + age + numkids +
+                  tot_non_equity_wealth_cat + lincome + male + partner +
+                  edu2 + edu3 + edu4 + edu5 + edu6 + indexlit2_new1 +
+                  retired + dum_selfempl,
+                data = data)
+
+# create robust standard errors
+cluster_se_iv_fit <- coeftest(iv_fit, vcov = vcovHC(stage1))[,2]
+
+
+# stargazer output -------------------------------------------------------------
+stargazer(list(ols_fit, stage1, iv_fit),
+          se = list(cluster_se_ols, cluster_se_stage1, cluster_se_iv_fit),
+          keep.stat = c("n"),
+          report = ('vc*t'),
+          type = 'latex', header = FALSE,
+          title = 'Three estimated models')
+
+
+```
+
+**Brief comment on the First stage regression:**
+
+From the first stage regression we can observe that sibling's financial situation is negatively correlated with the respondent's financial literacy. In other words, if you consider your sibling(s) to be in a worse financial situation, you are more likely to have higher financial knowledge. Parental knowledge of financial matters is also negatively correlated with the respondents financial knowledge.
+
+**Interpretation:** 
+
+The interpretation of the regression coefficient is the following, if we increase the literacy index by 1 unit then the probability of participation increases by 18,36%.
+
+The IV-regression gives us a diffferent/correct probability of participation of 18,36% which is different to the OLS probability of participation of 8.5%. 
+
+With a t-value of 2.136 the literacy index is statistically significantly different from 0 on 5% niveau. Also, 18% more participation in the stock market is relevant and therefore economically significant.  
+
+
+
+
+# Task 3
+
+**What reasons do the authors name for using an Instrumental Variable approach?**
+
+The authors suspect endogoneity,  mainly because of measurement error in literacy index since responses might be imprecise and may result from guessing.
+But there may also be learning and improvement in knowledge, which leads to upward bias.
+
+**How do the authors abstract the estimates obtained using OLS and IV?**
+In page 461 the authors demonstrate the different caterogies of variables
+included in the study. Some are dummys some are categorical variables. 
+
+
+
+**How do the authors discuss relevancy? (F-statistic)**
+
+The authors discuss relevancy simply by the significance of the instruments and the high F-statistic of 11.52 shown in table 8A, which is higher than the known "rule of thumb" of  10. 
+
+
+**After reading the authors explanations, are you convinced that both instruments are valid? (Exogeneity)**
+
+We are convinced that the instruments are relevant, since it is reasonable that knowledge of parents or financial well being of siblings is correlated with the literacy index. 
+
+But we are not completely convinced that the instruments fullfill exogeneity. 
+So instruments are likely correlated with the error term. 
+
+
+```{r}
+# ---------------------------- Task 3 ---------------------------------
+
+
+
+
+
+```
+
+
